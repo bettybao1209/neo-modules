@@ -15,7 +15,7 @@ namespace Neo.Plugins.Storage
         public Snapshot(Store store)
         {
             this.store = store;
-
+            store.session.CompletePending(true);
             store.db.TakeFullCheckpoint(out checkpoint);
             store.db.CompleteCheckpointAsync().GetAwaiter().GetResult();
         }
