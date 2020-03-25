@@ -7,20 +7,20 @@ namespace Neo.Plugins
     public class Nep5BalanceKey : IComparable<Nep5BalanceKey>, IEquatable<Nep5BalanceKey>, ISerializable
     {
         public readonly UInt160 UserScriptHash;
-        public readonly UInt160 AssetScriptHash;
+        public readonly int Id;
 
-        public int Size => 20 + 20;
+        public int Size => 20 + sizeof(int);
 
-        public Nep5BalanceKey() : this(new UInt160(), new UInt160())
+        public Nep5BalanceKey() : this(new UInt160(), new int())
         {
         }
 
-        public Nep5BalanceKey(UInt160 userScriptHash, UInt160 assetScriptHash)
+        public Nep5BalanceKey(UInt160 userScriptHash, int id)
         {
-            if (userScriptHash == null || assetScriptHash == null)
+            if (userScriptHash == null)
                 throw new ArgumentNullException();
             UserScriptHash = userScriptHash;
-            AssetScriptHash = assetScriptHash;
+            Id = id;
         }
 
         public int CompareTo(Nep5BalanceKey other)
@@ -29,14 +29,14 @@ namespace Neo.Plugins
             if (ReferenceEquals(this, other)) return 0;
             int result = UserScriptHash.CompareTo(other.UserScriptHash);
             if (result != 0) return result;
-            return AssetScriptHash.CompareTo(other.AssetScriptHash);
+            return Id.CompareTo(other.Id);
         }
 
         public bool Equals(Nep5BalanceKey other)
         {
             if (ReferenceEquals(null, other)) return false;
             if (ReferenceEquals(this, other)) return true;
-            return UserScriptHash.Equals(other.UserScriptHash) && AssetScriptHash.Equals(AssetScriptHash);
+            return UserScriptHash.Equals(other.UserScriptHash) && Id.Equals(other.Id);
         }
 
         public override bool Equals(Object other)
@@ -49,7 +49,7 @@ namespace Neo.Plugins
             unchecked
             {
                 var hashCode = UserScriptHash.GetHashCode();
-                hashCode = (hashCode * 397) ^ AssetScriptHash.GetHashCode();
+                hashCode = (hashCode * 397) ^ Id.GetHashCode();
                 return hashCode;
             }
         }
@@ -57,13 +57,13 @@ namespace Neo.Plugins
         public void Serialize(BinaryWriter writer)
         {
             writer.Write(UserScriptHash);
-            writer.Write(AssetScriptHash);
+            writer.Write(Id);
         }
 
         public void Deserialize(BinaryReader reader)
         {
-            ((ISerializable)UserScriptHash).Deserialize(reader);
-            ((ISerializable)AssetScriptHash).Deserialize(reader);
+            UserScriptHash.Deserialize(reader);
+            reader.ReadInt32();
         }
     }
 }

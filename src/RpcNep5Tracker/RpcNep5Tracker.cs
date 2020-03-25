@@ -7,7 +7,6 @@ using Neo.Ledger;
 using Neo.Network.P2P.Payloads;
 using Neo.Persistence;
 using Neo.SmartContract;
-using Neo.SmartContract.Native;
 using Neo.VM;
 using Neo.Wallets;
 using System;
@@ -24,7 +23,7 @@ namespace Neo.Plugins
         private const byte Nep5TransferSentPrefix = 0xf9;
         private const byte Nep5TransferReceivedPrefix = 0xfa;
         private DB _db;
-        private DataCache<Nep5BalanceKey, Nep5Balance> _balances;
+        private DataCache<Nep5BalanceKey, Nep5BalanceValue> _balances;
         private DataCache<Nep5TransferKey, Nep5Transfer> _transfersSent;
         private DataCache<Nep5TransferKey, Nep5Transfer> _transfersReceived;
         private WriteBatch _writeBatch;
@@ -56,7 +55,7 @@ namespace Neo.Plugins
             _levelDbSnapshot?.Dispose();
             _levelDbSnapshot = _db.GetSnapshot();
             ReadOptions dbOptions = new ReadOptions { FillCache = false, Snapshot = _levelDbSnapshot };
-            _balances = new DbCache<Nep5BalanceKey, Nep5Balance>(_db, dbOptions, _writeBatch, Nep5BalancePrefix);
+            _balances = new DbCache<Nep5BalanceKey, Nep5BalanceValue>(_db, dbOptions, _writeBatch, Nep5BalancePrefix);
             if (_shouldTrackHistory)
             {
                 _transfersSent =
@@ -100,7 +99,7 @@ namespace Neo.Plugins
 
         private void HandleNotification(StoreView snapshot, IVerifiable scriptContainer, UInt160 scriptHash,
             VM.Types.Array stateItems,
-            Dictionary<Nep5BalanceKey, Nep5Balance> nep5BalancesChanged, ref ushort transferIndex)
+            Dictionary<Nep5BalanceKey, Nep5BalanceValue> nep5BalancesChanged, ref ushort transferIndex)
         {
             if (stateItems.Count == 0) return;
             // Event name should be encoded as a byte array.
@@ -125,19 +124,20 @@ namespace Neo.Plugins
             if (fromBytes == null && toBytes == null) return;
             var from = UInt160.Zero;
             var to = UInt160.Zero;
+            int id = snapshot.Contracts.TryGet(scriptHash).Id;
 
             if (fromBytes != null)
             {
                 from = new UInt160(fromBytes);
-                var fromKey = new Nep5BalanceKey(from, scriptHash);
-                if (!nep5BalancesChanged.ContainsKey(fromKey)) nep5BalancesChanged.Add(fromKey, new Nep5Balance());
+                var fromKey = new Nep5BalanceKey(from, id);
+                if (!nep5BalancesChanged.ContainsKey(fromKey)) nep5BalancesChanged.Add(fromKey, new Nep5BalanceValue() { AssetScriptHash = scriptHash });
             }
 
             if (toBytes != null)
             {
                 to = new UInt160(toBytes);
-                var toKey = new Nep5BalanceKey(to, scriptHash);
-                if (!nep5BalancesChanged.ContainsKey(toKey)) nep5BalancesChanged.Add(toKey, new Nep5Balance());
+                var toKey = new Nep5BalanceKey(to, id);
+                if (!nep5BalancesChanged.ContainsKey(toKey)) nep5BalancesChanged.Add(toKey, new Nep5BalanceValue() { AssetScriptHash = scriptHash });
             }
             if (scriptContainer is Transaction transaction)
             {
@@ -149,7 +149,7 @@ namespace Neo.Plugins
         {
             // Start freshly with a new DBCache for each block.
             ResetBatch();
-            Dictionary<Nep5BalanceKey, Nep5Balance> nep5BalancesChanged = new Dictionary<Nep5BalanceKey, Nep5Balance>();
+            Dictionary<Nep5BalanceKey, Nep5BalanceValue> nep5BalancesChanged = new Dictionary<Nep5BalanceKey, Nep5BalanceValue>();
 
             ushort transferIndex = 0;
             foreach (Blockchain.ApplicationExecuted appExecuted in applicationExecutedList)
@@ -171,7 +171,7 @@ namespace Neo.Plugins
                 byte[] script;
                 using (ScriptBuilder sb = new ScriptBuilder())
                 {
-                    sb.EmitAppCall(nep5BalancePair.Key.AssetScriptHash, "balanceOf",
+                    sb.EmitAppCall(nep5BalancePair.Value.AssetScriptHash, "balanceOf",
                         nep5BalancePair.Key.UserScriptHash.ToArray());
                     script = sb.ToArray();
                 }
@@ -281,12 +281,14 @@ namespace Neo.Plugins
             JArray balances = new JArray();
             json["balance"] = balances;
             json["address"] = userScriptHash.ToAddress();
-            var dbCache = new DbCache<Nep5BalanceKey, Nep5Balance>(_db, null, null, Nep5BalancePrefix);
+            var dbCache = new DbCache<Nep5BalanceKey, Nep5BalanceValue>(_db, null, null, Nep5BalancePrefix);
             byte[] prefix = userScriptHash.ToArray();
             foreach (var (key, value) in dbCache.Find(prefix))
             {
                 JObject balance = new JObject();
-                balance["asset_hash"] = key.AssetScriptHash.ToString();
+                if (!Blockchain.Singleton.View.Storages.Find(BitConverter.GetBytes(key.Id)).Any())
+                    continue;
+                balance["asset_hash"] = value.AssetScriptHash.ToString();
                 balance["amount"] = value.Balance.ToString();
                 balance["last_updated_block"] = value.LastUpdatedBlock;
                 balances.Add(balance);
