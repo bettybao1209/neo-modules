@@ -7,11 +7,11 @@ namespace Neo.Plugins
     public class Nep5BalanceKey : IComparable<Nep5BalanceKey>, IEquatable<Nep5BalanceKey>, ISerializable
     {
         public readonly UInt160 UserScriptHash;
-        public readonly int Id;
+        public int Id;
 
         public int Size => 20 + sizeof(int);
 
-        public Nep5BalanceKey() : this(new UInt160(), new int())
+        public Nep5BalanceKey() : this(new UInt160(), 0)
         {
         }
 
@@ -63,7 +63,7 @@ namespace Neo.Plugins
         public void Deserialize(BinaryReader reader)
         {
             UserScriptHash.Deserialize(reader);
-            reader.ReadInt32();
+            Id = reader.ReadInt32();
         }
     }
 }

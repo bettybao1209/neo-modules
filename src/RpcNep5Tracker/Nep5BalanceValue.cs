@@ -12,6 +12,17 @@ namespace Neo.Plugins
 
         int ISerializable.Size => Balance.ToByteArray().GetVarSize() + sizeof(uint) + UInt160.Length;
 
+        public Nep5BalanceValue() : this(new BigInteger(), 0, new UInt160())
+        {
+        }
+
+        public Nep5BalanceValue(BigInteger balance, uint lastUpdatedBlock, UInt160 assetScriptHash)
+        {
+            Balance = balance;
+            LastUpdatedBlock = lastUpdatedBlock;
+            AssetScriptHash = assetScriptHash;
+        }
+
         void ISerializable.Serialize(BinaryWriter writer)
         {
             writer.WriteVarBytes(Balance.ToByteArray());
