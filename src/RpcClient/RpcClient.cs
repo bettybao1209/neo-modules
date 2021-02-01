@@ -14,6 +14,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Neo.SmartContract.Native;
 
 namespace Neo.Network.RPC
 {
@@ -264,7 +265,7 @@ namespace Neo.Network.RPC
         {
             var json = await RpcSendAsync(GetRpcName(), Convert.ToBase64String(tx.ToArray()))
                 .ConfigureAwait(false);
-            return (long)json["networkfee"].AsNumber();
+            return (long)BigDecimal.Parse(json["networkfee"].AsString(), NativeContract.GAS.Decimals).Value;
         }
 
         /// <summary>
