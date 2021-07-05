@@ -193,6 +193,8 @@ namespace Neo.Plugins
 
         static void PersistRDB(UInt256 blockHash, List<TransactionInfo> transactionInfos)
         {
+            if (transactionInfos.Count == 0) return;
+
             var builder = new MySqlConnectionStringBuilder
             {
                 Server = "localhost", //
@@ -206,6 +208,7 @@ namespace Neo.Plugins
 
             using (var conn = new MySqlConnection(builder.ConnectionString))
             {
+                conn.Open();
                 IDbTransaction transaction = conn.BeginTransaction();
                 try
                 {
