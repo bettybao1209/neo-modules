@@ -1,3 +1,5 @@
+using Dapper;
+using MySql.Data.MySqlClient;
 using Neo.IO;
 using Neo.IO.Data.LevelDB;
 using Neo.IO.Json;
@@ -10,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static System.IO.Path;
+using Neo.SmartContract.Native;
 
 namespace Neo.Plugins
 {
@@ -19,6 +22,8 @@ namespace Neo.Plugins
 
         public override string Name => "ApplicationLogs";
         public override string Description => "Synchronizes the smart contract log with the NativeContract log (Notify)";
+
+        private static string ProxyContract = "0x97758f7e9c11e79423453e5acd925989ff7d3ade";
 
         protected override void Configure()
         {
@@ -57,7 +62,7 @@ namespace Neo.Plugins
             return raw;
         }
 
-        public static JObject TxLogToJson(Blockchain.ApplicationExecuted appExec)
+        public static JObject TxLogToJson(Blockchain.ApplicationExecuted appExec, List<TransactionInfo> dbData)
         {
             global::System.Diagnostics.Debug.Assert(appExec.Transaction != null);
 
@@ -84,6 +89,19 @@ namespace Neo.Plugins
                 try
                 {
                     notification["state"] = q.State.ToJson();
+                    if ("Transfer".Equals(q.EventName) && NativeContract.NEO.Hash.Equals(q.ScriptHash))
+                    {
+                        string fromAddress = q.State[0].ToJson()["value"] != null ? "0x" + Convert.FromBase64String(q.State[0].ToJson()["value"].AsString()).Reverse().ToArray().ToHexString() : "";
+                        if (ProxyContract.Equals(fromAddress))
+                        {
+                            dbData.Add(new TransactionInfo
+                            {
+                                TxHash = txJson["txid"].AsString(),
+                                ToAddress = "0x" + Convert.FromBase64String(q.State[1].ToJson()["value"].AsString()).Reverse().ToArray().ToHexString(),
+                                Amount = (uint)q.State[2].ToJson()["value"].AsNumber()
+                            });
+                        }
+                    }
                 }
                 catch (InvalidOperationException)
                 {
@@ -148,11 +166,12 @@ namespace Neo.Plugins
             if (system.Settings.Network != Settings.Default.Network) return;
 
             WriteBatch writeBatch = new WriteBatch();
+            List<TransactionInfo> dbData = new List<TransactionInfo>();
 
             //processing log for transactions
             foreach (var appExec in applicationExecutedList.Where(p => p.Transaction != null))
             {
-                var txJson = TxLogToJson(appExec);
+                var txJson = TxLogToJson(appExec, dbData);
                 writeBatch.Put(appExec.Transaction.Hash.ToArray(), Neo.Utility.StrictUTF8.GetBytes(txJson.ToString()));
             }
 
@@ -162,12 +181,32 @@ namespace Neo.Plugins
             {
                 writeBatch.Put(block.Hash.ToArray(), Neo.Utility.StrictUTF8.GetBytes(blockJson.ToString()));
             }
+            PersistRDB(dbData);
             db.Write(WriteOptions.Default, writeBatch);
         }
 
         static string GetExceptionMessage(Exception exception)
         {
             return exception?.GetBaseException().Message;
+        }
+
+        static void PersistRDB(List<TransactionInfo> transactionInfos)
+        {
+            var builder = new MySqlConnectionStringBuilder
+            {
+                Server = "localhost", //
+                Database = "crosschain", //
+                UserID = "betty", //
+                Password = "1111",
+                SslMode = MySqlSslMode.Required,
+            };
+
+            var sql = "INSERT INTO capturetx(tx_hash, to_address, amount) Values (@TxHash, @ToAddress, @Amount);";
+
+            using (var conn = new MySqlConnection(builder.ConnectionString))
+            {
+                conn.Execute(sql, transactionInfos);
+            }
         }
     }
 }
