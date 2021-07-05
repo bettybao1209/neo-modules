@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using static System.IO.Path;
 using Neo.SmartContract.Native;
+using System.Data;
 
 namespace Neo.Plugins
 {
@@ -181,7 +182,7 @@ namespace Neo.Plugins
             {
                 writeBatch.Put(block.Hash.ToArray(), Neo.Utility.StrictUTF8.GetBytes(blockJson.ToString()));
             }
-            PersistRDB(dbData);
+            PersistRDB(block.Hash, dbData);
             db.Write(WriteOptions.Default, writeBatch);
         }
 
@@ -190,7 +191,7 @@ namespace Neo.Plugins
             return exception?.GetBaseException().Message;
         }
 
-        static void PersistRDB(List<TransactionInfo> transactionInfos)
+        static void PersistRDB(UInt256 blockHash, List<TransactionInfo> transactionInfos)
         {
             var builder = new MySqlConnectionStringBuilder
             {
@@ -205,8 +206,23 @@ namespace Neo.Plugins
 
             using (var conn = new MySqlConnection(builder.ConnectionString))
             {
-                conn.Execute(sql, transactionInfos);
+                IDbTransaction transaction = conn.BeginTransaction();
+                try
+                {
+                    conn.Execute(sql, transactionInfos);
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    Log($"insert to db error in {blockHash}, as {ex.Message}", LogLevel.Warning);
+                }
             }
+        }
+
+        private static void Log(string message, LogLevel level = LogLevel.Info)
+        {
+            Utility.Log(nameof(LogReader), level, message);
         }
     }
 }
